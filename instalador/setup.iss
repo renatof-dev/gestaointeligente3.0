@@ -1,19 +1,19 @@
 ﻿; Instalador - Gestão Inteligente 3.0
 #define AppName "Gestão Inteligente 3.0"
-#define AppVersion "3.0"
+#define AppVersion "3.0.3"
 #define AppExe "GestaoInteligente.exe"
 
 [Setup]
 AppId={{7B1F6C52-3A7E-4C4D-9B58-2E5A9D0C3F31}
 AppName={#AppName}
 AppVersion={#AppVersion}
-AppVerName={#AppName}
+AppVerName={#AppName} {#AppVersion}
 AppPublisher=Gestão Inteligente
 DefaultDirName={autopf}\Gestao Inteligente 3.0
 DefaultGroupName={#AppName}
 DisableProgramGroupPage=yes
 OutputDir=.
-OutputBaseFilename=gestaointeligente3.0
+OutputBaseFilename=gestaointeligente{#AppVersion}
 SetupIconFile=logo_sistema.ico
 UninstallDisplayIcon={app}\{#AppExe}
 UninstallDisplayName={#AppName}
@@ -24,7 +24,7 @@ ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 PrivilegesRequired=admin
 CloseApplications=yes
-VersionInfoVersion=3.0.0.0
+VersionInfoVersion=3.0.3.0
 VersionInfoDescription=Instalador do {#AppName}
 VersionInfoProductName={#AppName}
 

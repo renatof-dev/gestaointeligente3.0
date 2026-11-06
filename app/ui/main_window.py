@@ -50,6 +50,7 @@ from PySide6.QtWidgets import (
     QTabWidget,
     QTextEdit,
     QToolButton,
+    QToolTip,
     QVBoxLayout,
     QWidget,
     QHeaderView,
@@ -72,13 +73,14 @@ try:
 except Exception:  # pragma: no cover
     QT_CHARTS_AVAILABLE = False
 
-from app.config import DEFAULT_PRODUCT_IMAGE, DEFAULT_SYSTEM_LOGO
+from app.config import APP_VERSION, DEFAULT_PRODUCT_IMAGE, DEFAULT_SYSTEM_LOGO
 from app.database import Database
 from app.services.auth_service import AuthUser, hash_password
 from app.services.backup_service import BackupService
 from app.services.product_lookup_service import lookup_product_by_barcode
 from app.services.printer_service import PrinterService, normalize_receipt_text
 from app.services.sales_service import CartItem, PaymentPart, SalesService
+from app.services.update_service import UpdateInfo, check_for_update, download_update, launch_update_and_exit
 
 
 def _vector_icon(kind: str, color: str, size: int = 64) -> QIcon:
@@ -518,6 +520,107 @@ class MainWindow(QMainWindow):
         self.menu_list.currentRowChanged.connect(self._on_menu_changed)
         if self.menu_list.count() > 0:
             self.menu_list.setCurrentRow(0)
+        QTimer.singleShot(1500, self._run_daily_backup)
+        QTimer.singleShot(2500, self._check_for_updates)
+
+    def _check_for_updates(self) -> None:
+        """Verifica em segundo plano se ha uma versao mais nova publicada no GitHub."""
+        def work() -> None:
+            try:
+                info = check_for_update()
+            except Exception:
+                info = None
+            if info is not None:
+                QTimer.singleShot(0, lambda: self._prompt_update(info))
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _prompt_update(self, info: UpdateInfo) -> None:
+        answer = QMessageBox.question(
+            self,
+            "Atualização disponível",
+            f"Uma nova versão do sistema está disponível: v{info.version} (atual: v{APP_VERSION}).\n\n"
+            "Deseja atualizar agora?\n"
+            "O sistema será fechado e a atualização será aplicada. Seus dados serão mantidos.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes,
+        )
+        if answer == QMessageBox.StandardButton.Yes:
+            self._run_update(info)
+
+    def _run_update(self, info: UpdateInfo) -> None:
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Atualizando sistema")
+        dialog.setModal(True)
+        dialog.setWindowFlag(Qt.WindowType.WindowCloseButtonHint, False)
+        dialog.setMinimumWidth(420)
+        layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(28, 24, 28, 20)
+        layout.setSpacing(12)
+        spinner = SpinnerWidget()
+        layout.addWidget(spinner, 0, Qt.AlignmentFlag.AlignHCenter)
+        heading = QLabel(f"Baixando atualização v{info.version}...")
+        heading.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        heading.setStyleSheet("font-size: 16px; font-weight: 700;")
+        status = QLabel("Conectando...")
+        status.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        status.setWordWrap(True)
+        layout.addWidget(heading)
+        layout.addWidget(status)
+
+        state: dict = {"file": None, "error": ""}
+
+        def work() -> None:
+            try:
+                def on_progress(done: int, total: int) -> None:
+                    if total > 0:
+                        state["text"] = f"Baixando... {done * 100 // total}% ({done // (1024 * 1024)} de {total // (1024 * 1024)} MB)"
+                    else:
+                        state["text"] = f"Baixando... {done // (1024 * 1024)} MB"
+                state["file"] = download_update(info, on_progress)
+            except Exception as exc:
+                state["error"] = str(exc) or exc.__class__.__name__
+
+        timer = QTimer(dialog)
+
+        def poll() -> None:
+            status.setText(state.get("text", "Conectando..."))
+            if state["file"] is not None:
+                timer.stop()
+                spinner.set_state("ok")
+                heading.setText("Download concluído!")
+                status.setText("Abrindo o atualizador. O sistema será fechado.")
+                QTimer.singleShot(1200, lambda: launch_update_and_exit(state["file"]))
+            elif state["error"]:
+                timer.stop()
+                dialog.reject()
+
+        timer.timeout.connect(poll)
+        timer.start(150)
+        threading.Thread(target=work, daemon=True).start()
+        dialog.exec()
+
+        if state["error"]:
+            QMessageBox.warning(
+                self,
+                "Atualização",
+                "Não foi possível baixar a atualização.\n"
+                f"Motivo: {state['error']}\n\n"
+                "O sistema continuará funcionando normalmente na versão atual.",
+            )
+
+    def _run_daily_backup(self) -> None:
+        """Gera um backup local silencioso uma vez por dia, sem travar a abertura do sistema."""
+        if self.backup_service.backup_exists_for_today():
+            return
+
+        def work() -> None:
+            try:
+                self.backup_service.create_backup_file()
+            except Exception:
+                pass  # backup diario e silencioso; o backup ao fechar continua ativo
+
+        threading.Thread(target=work, daemon=True).start()
 
     def _start_exchange(self, sale_id: int, cart: list[dict], client_id: int | None, original_total: float) -> None:
         if "PDV" not in self._menu_keys:
@@ -887,17 +990,22 @@ class DashboardPage(BasePage):
             """,
             (start, end),
         )
+        # Cancelamentos com motivo contendo "pedido teste" nao entram na contagem
+        # (cliente apenas testando o sistema ou venda feita por engano).
         cancelled = self.db.fetch_one(
             """
             SELECT COUNT(*) qtd, COALESCE(SUM(net_total),0) total
             FROM sales
             WHERE DATE(created_at) BETWEEN ? AND ? AND status = 'CANCELADA'
+              AND LOWER(COALESCE(cancel_reason,'')) NOT LIKE '%pedido teste%'
             """,
             (start, end),
         )
         self.lbl_cancelled.setText(str(int(cancelled["qtd"] or 0)))
         self.lbl_cancelled_delta.setText(f"{fmt_money(cancelled['total'])} nao contabilizados")
         self.lbl_cancelled_delta.setStyleSheet("color:#ef4444;font-weight:700;")
+        self.lbl_cancelled.setToolTip("Cancelamentos com motivo 'pedido teste' nao sao contabilizados.")
+        self.lbl_cancelled_delta.setToolTip("Cancelamentos com motivo 'pedido teste' nao sao contabilizados.")
         self.lbl_sales.setText(fmt_money(summary["net"]))
         self.lbl_fees.setText(fmt_money(summary["fees"]))
         self.lbl_profit.setText(fmt_money(summary["profit"]))
@@ -1280,7 +1388,13 @@ class DashboardPage(BasePage):
             )
             if answer != QMessageBox.StandardButton.Yes:
                 return
-            reason, _ok = QInputDialog.getText(dlg, "Cancelar venda", "Motivo do cancelamento (opcional):")
+            reason, _ok = QInputDialog.getText(
+                dlg,
+                "Cancelar venda",
+                "Motivo do cancelamento (opcional):\n\n"
+                "Dica: escreva \"pedido teste\" no motivo para que este cancelamento\n"
+                "NAO seja contabilizado no Dashboard (testes ou vendas por engano).",
+            )
             try:
                 self.sales_service.cancel_sale(sale_id, self.user.id, reason)
             except ValueError as exc:
@@ -1516,6 +1630,7 @@ class DashboardPage(BasePage):
 
 class PdvPage(BasePage):
     METHODS = ["DEBITO", "CREDITO_AVISTA", "CREDITO_PARCELADO", "PIX_MAQUININHA", "PIX", "DINHEIRO"]
+    PRODUCT_CARD_LIMIT = 15
 
     def __init__(self, db: Database, user: AuthUser, sales_service: SalesService) -> None:
         super().__init__()
@@ -1702,8 +1817,9 @@ class PdvPage(BasePage):
         ll.addWidget(products_sub)
         self.search_edit = QLineEdit()
         self.search_edit.setObjectName("PdvSearchInput")
-        self.search_edit.setPlaceholderText("Buscar produto por nome ou código de barras")
+        self.search_edit.setPlaceholderText("Buscar produto por nome ou código de barras (Enter adiciona ao carrinho)")
         self.search_edit.textChanged.connect(self.load_products)
+        self.search_edit.returnPressed.connect(self._on_search_return)
         ll.addWidget(self.search_edit)
 
         self.products_count = QLabel("0 produtos encontrados")
@@ -2086,13 +2202,14 @@ class PdvPage(BasePage):
         self._bind_shortcuts()
 
     def _bind_shortcuts(self) -> None:
+        # Return/Enter NAO podem ser atalho de finalizar venda: leitores de codigo de
+        # barras enviam Enter ao final da leitura, o que fechava a venda sozinho.
+        # O Enter e tratado pelo campo de busca (_on_search_return).
         shortcuts = [
             ("F2", "Pagamento Dinheiro", lambda: self._add_quick_payment("DINHEIRO")),
             ("F3", "Pagamento Debito", lambda: self._add_quick_payment("DEBITO")),
             ("F4", "Pagamento Credito", lambda: self._add_quick_payment("CREDITO_AVISTA")),
             ("F5", "Pagamento PIX", lambda: self._add_quick_payment("PIX")),
-            ("Return", "Finalizar Venda", self.finalize_sale),
-            ("Enter", "Finalizar Venda Numpad", self.finalize_sale),
             ("Escape", "Limpar Venda", self.clear_sale),
         ]
         for key, text, callback in shortcuts:
@@ -2101,6 +2218,48 @@ class PdvPage(BasePage):
             action.setShortcutContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
             action.triggered.connect(callback)
             self.addAction(action)
+
+    def showEvent(self, event) -> None:  # type: ignore[override]
+        super().showEvent(event)
+        self.search_edit.setFocus()
+
+    def _reset_search_for_next_scan(self) -> None:
+        """Deixa o campo de busca pronto para a proxima leitura do leitor de codigo de barras."""
+        self.search_edit.clear()
+        self.search_edit.setFocus()
+
+    def _on_search_return(self) -> None:
+        """Enter na busca: adiciona o produto lido/encontrado; com a busca vazia, finaliza a venda."""
+        term = self.search_edit.text().strip()
+        if not term:
+            self.finalize_sale()
+            return
+
+        product_id: int | None = None
+        exact = self.db.fetch_one("SELECT id FROM products WHERE active = 1 AND barcode = ?", (term,))
+        if exact:
+            product_id = int(exact["id"])
+        else:
+            like = f"%{term}%"
+            matches = self.db.fetch_all(
+                "SELECT id FROM products WHERE active = 1 AND (name LIKE ? OR barcode LIKE ?) ORDER BY name LIMIT 2",
+                (like, like),
+            )
+            if len(matches) == 1:
+                product_id = int(matches[0]["id"])
+            else:
+                message = (
+                    "Nenhum produto encontrado para esta busca."
+                    if not matches
+                    else "Mais de um produto encontrado. Clique no produto desejado."
+                )
+                QToolTip.showText(
+                    self.search_edit.mapToGlobal(self.search_edit.rect().bottomLeft()),
+                    message,
+                    self.search_edit,
+                )
+                return
+        self.add_product_by_id(product_id)
 
     def _toggle_secondary_payment(self, enabled: bool) -> None:
         self.secondary_payment_wrap.setVisible(enabled)
@@ -2142,14 +2301,27 @@ class PdvPage(BasePage):
 
     def load_products(self) -> None:
         term = f"%{self.search_edit.text().strip()}%"
+        # Contagens via SQL (sem renderizar): manter o PDV leve mesmo com muitos produtos.
+        totals = self.db.fetch_one(
+            """
+            SELECT COUNT(*) AS total,
+                   COALESCE(SUM(CASE WHEN stock_qty <= min_qty THEN 1 ELSE 0 END), 0) AS low_stock
+            FROM products
+            WHERE active = 1 AND (name LIKE ? OR barcode LIKE ?)
+            """,
+            (term, term),
+        )
+        total = int(totals["total"] or 0)
+        low_count = int(totals["low_stock"] or 0)
         rows = self.db.fetch_all(
             """
             SELECT id, COALESCE(barcode,'') AS barcode, name, sale_price, stock_qty, min_qty, COALESCE(image_path,'') AS image_path
             FROM products
             WHERE active = 1 AND (name LIKE ? OR barcode LIKE ?)
             ORDER BY name
+            LIMIT ?
             """,
-            (term, term),
+            (term, term, self.PRODUCT_CARD_LIMIT),
         )
 
         while self.products_grid.count():
@@ -2158,9 +2330,11 @@ class PdvPage(BasePage):
             if widget is not None:
                 widget.deleteLater()
 
-        self.products_count.setText(f"{len(rows)} produtos encontrados")
+        if total > len(rows):
+            self.products_count.setText(f"Mostrando {len(rows)} de {total} produtos — refine a busca")
+        else:
+            self.products_count.setText(f"{total} produtos encontrados")
 
-        low_count = 0
         for idx, r in enumerate(rows):
             image_path = r["image_path"] or str(DEFAULT_PRODUCT_IMAGE)
 
@@ -2168,7 +2342,6 @@ class PdvPage(BasePage):
             min_stock = float(r["min_qty"] or 0.0)
             status_text = "Normal"
             if stock <= min_stock:
-                low_count += 1
                 status_text = "Crítico"
             elif stock <= (min_stock * 1.25 if min_stock > 0 else 2):
                 status_text = "Baixo"
@@ -2263,6 +2436,7 @@ class PdvPage(BasePage):
                     return
                 item["qty"] += 1
                 self.refresh_cart_table()
+                self._reset_search_for_next_scan()
                 return
 
         self.cart.append(
@@ -2276,6 +2450,7 @@ class PdvPage(BasePage):
             }
         )
         self.refresh_cart_table()
+        self._reset_search_for_next_scan()
 
     def load_clients(self) -> None:
         current_id = self.client_combo.currentData()
@@ -2831,12 +3006,15 @@ class PdvPage(BasePage):
         return self._make_receipt_text(sale_id, preview)
 
 class ProductsPage(BasePage):
+    PAGE_SIZE = 11
+
     def __init__(self, db: Database, user: AuthUser) -> None:
         super().__init__()
         self.setObjectName("ManagementPage")
         self.db = db
         self.user = user
         self._product_rows = []
+        self._current_page = 0
         self._build()
         self.refresh()
 
@@ -2887,7 +3065,7 @@ class ProductsPage(BasePage):
         self.search.setObjectName("ProductsSearchInput")
         self.search.setClearButtonEnabled(True)
         self.search.setPlaceholderText("Buscar produto...")
-        self.search.textChanged.connect(self.refresh)
+        self.search.textChanged.connect(self._on_search_changed)
         self.search.setMaximumWidth(360)
         top.addWidget(self.search)
         top.addStretch(1)
@@ -2916,6 +3094,27 @@ class ProductsPage(BasePage):
         self.table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.table.horizontalHeader().setDefaultAlignment(Qt.AlignmentFlag.AlignCenter)
         listing_layout.addWidget(self.table, 1)
+
+        pager_wrap = QFrame()
+        pager_wrap.setObjectName("ProductsPager")
+        pager = QHBoxLayout(pager_wrap)
+        pager.setContentsMargins(18, 8, 18, 12)
+        pager.setSpacing(10)
+        self.btn_prev_page = QPushButton("← Anterior")
+        self.btn_prev_page.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_prev_page.clicked.connect(lambda: self._go_to_page(self._current_page - 1))
+        pager.addWidget(self.btn_prev_page)
+        pager.addStretch(1)
+        self.page_label = QLabel("Página 1 de 1")
+        self.page_label.setObjectName("ProductsPageLabel")
+        self.page_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        pager.addWidget(self.page_label)
+        pager.addStretch(1)
+        self.btn_next_page = QPushButton("Próxima →")
+        self.btn_next_page.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_next_page.clicked.connect(lambda: self._go_to_page(self._current_page + 1))
+        pager.addWidget(self.btn_next_page)
+        listing_layout.addWidget(pager_wrap)
         root.addWidget(listing, 1)
 
     def _product_metric(self, icon_text: str, caption_text: str, value_text: str, kind: str) -> QFrame:
@@ -2943,6 +3142,17 @@ class ProductsPage(BasePage):
         card.value_label = value
         return card
 
+    def _on_search_changed(self, *_args) -> None:
+        self._current_page = 0
+        self.refresh()
+
+    def _go_to_page(self, page: int) -> None:
+        page = max(0, page)
+        if page == self._current_page:
+            return
+        self._current_page = page
+        self.refresh()
+
     def refresh(self) -> None:
         term = f"%{self.search.text().strip()}%"
         stats = self.db.fetch_one(
@@ -2958,6 +3168,24 @@ class ProductsPage(BasePage):
         self.metric_low_stock.value_label.setText(str(int(stats["low_stock"] or 0)))
         self.metric_inventory_value.value_label.setText(fmt_money(stats["inventory_value"] or 0))
 
+        # Paginacao: conta o total filtrado e carrega/renderiza apenas a pagina atual.
+        total_rows = int(
+            self.db.fetch_one(
+                """
+                SELECT COUNT(*) AS c
+                FROM products p
+                LEFT JOIN suppliers s ON s.id = p.supplier_id
+                WHERE p.active = 1
+                  AND (p.name LIKE ? OR COALESCE(p.barcode,'') LIKE ?
+                       OR COALESCE(s.fantasy_name,'') LIKE ? OR COALESCE(p.description,'') LIKE ?)
+                """,
+                (term, term, term, term),
+            )["c"]
+            or 0
+        )
+        total_pages = max(1, (total_rows + self.PAGE_SIZE - 1) // self.PAGE_SIZE)
+        self._current_page = max(0, min(self._current_page, total_pages - 1))
+
         rows = self.db.fetch_all(
             """
             SELECT p.id, COALESCE(p.barcode,'') AS barcode, p.name,
@@ -2971,11 +3199,15 @@ class ProductsPage(BasePage):
               AND (p.name LIKE ? OR COALESCE(p.barcode,'') LIKE ?
                    OR COALESCE(s.fantasy_name,'') LIKE ? OR COALESCE(p.description,'') LIKE ?)
             ORDER BY p.name
+            LIMIT ? OFFSET ?
             """,
-            (term, term, term, term),
+            (term, term, term, term, self.PAGE_SIZE, self._current_page * self.PAGE_SIZE),
         )
         self._product_rows = rows
-        self.products_count_label.setText(f"{len(rows)} produto" + ("s" if len(rows) != 1 else ""))
+        self.products_count_label.setText(f"{total_rows} produto" + ("s" if total_rows != 1 else ""))
+        self.page_label.setText(f"Página {self._current_page + 1} de {total_pages}")
+        self.btn_prev_page.setEnabled(self._current_page > 0)
+        self.btn_next_page.setEnabled(self._current_page < total_pages - 1)
         data = []
         for product in rows:
             barcode = product["barcode"] or f"ID-{product['id']}"

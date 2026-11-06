@@ -56,6 +56,13 @@ class BackupService:
             source.close()
         return dest
 
+    def backup_exists_for_today(self) -> bool:
+        """Informa se ja existe um backup gerado na data de hoje."""
+        today_prefix = f"backup_{datetime.now():%Y%m%d}"
+        if not BACKUP_DIR.is_dir():
+            return False
+        return any(p.name.startswith(today_prefix) for p in BACKUP_DIR.glob("backup_*.db"))
+
     def restore_backup(self, backup_file: str | Path) -> Path:
         """Restaura um backup .db sobre o banco atual. Retorna o backup de seguranca do estado anterior."""
         source_path = Path(backup_file)

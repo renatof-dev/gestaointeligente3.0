@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from app.config import DEFAULT_SYSTEM_LOGO
+from app.config import APP_VERSION, DEFAULT_SYSTEM_LOGO
 from app.services.auth_service import AuthService, AuthUser
 
 
@@ -27,7 +27,7 @@ class LoginWindow(QWidget):
     def __init__(self, auth_service: AuthService) -> None:
         super().__init__()
         self.auth_service = auth_service
-        self.setWindowTitle("Login - Gestão Inteligente 3.0")
+        self.setWindowTitle(f"Login - Gestão Inteligente 3.0 (v{APP_VERSION})")
         if Path(DEFAULT_SYSTEM_LOGO).exists():
             self.setWindowIcon(QIcon(str(DEFAULT_SYSTEM_LOGO)))
         screen = QApplication.screenAt(QCursor.pos()) or QApplication.primaryScreen()
@@ -168,7 +168,7 @@ class LoginWindow(QWidget):
 
         left_layout.addStretch()
 
-        footer = QLabel("Plataforma local • segura • pronta para operar")
+        footer = QLabel(f"Versão {APP_VERSION} • Plataforma local • segura • pronta para operar")
         footer.setObjectName("ShowcaseFooter")
         footer.setAlignment(Qt.AlignmentFlag.AlignCenter)
         left_layout.addWidget(footer)
@@ -236,6 +236,11 @@ class LoginWindow(QWidget):
         help_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         help_lbl.setObjectName("HelpText")
         card_layout.addWidget(help_lbl)
+
+        version_lbl = QLabel(f"v{APP_VERSION}")
+        version_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        version_lbl.setObjectName("HelpText")
+        card_layout.addWidget(version_lbl)
 
         right_layout.addStretch()
         right_layout.addWidget(card, 0, Qt.AlignmentFlag.AlignCenter)

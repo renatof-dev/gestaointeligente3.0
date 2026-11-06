@@ -178,6 +178,25 @@ class Database:
             if "cancel_reason" not in sale_columns:
                 conn.execute("ALTER TABLE sales ADD COLUMN cancel_reason TEXT")
 
+            # Indices para manter consultas rapidas conforme o volume de dados cresce.
+            conn.executescript(
+                """
+                CREATE INDEX IF NOT EXISTS idx_products_name ON products(name);
+                CREATE INDEX IF NOT EXISTS idx_products_barcode ON products(barcode);
+                CREATE INDEX IF NOT EXISTS idx_products_active ON products(active);
+                CREATE INDEX IF NOT EXISTS idx_sales_created_at ON sales(created_at);
+                CREATE INDEX IF NOT EXISTS idx_sales_status ON sales(status);
+                CREATE INDEX IF NOT EXISTS idx_sales_client ON sales(client_id);
+                CREATE INDEX IF NOT EXISTS idx_sales_user ON sales(user_id);
+                CREATE INDEX IF NOT EXISTS idx_sale_items_sale ON sale_items(sale_id);
+                CREATE INDEX IF NOT EXISTS idx_sale_items_product ON sale_items(product_id);
+                CREATE INDEX IF NOT EXISTS idx_sale_payments_sale ON sale_payments(sale_id);
+                CREATE INDEX IF NOT EXISTS idx_cashflow_date ON cashflow_entries(entry_date);
+                CREATE INDEX IF NOT EXISTS idx_cashflow_sale ON cashflow_entries(reference_sale_id);
+                CREATE INDEX IF NOT EXISTS idx_clients_name ON clients(name);
+                """
+            )
+
             now = datetime.now().isoformat(timespec="seconds")
             conn.execute(
                 """

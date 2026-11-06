@@ -1,6 +1,6 @@
 ﻿; Instalador - Gestão Inteligente 3.0
 #define AppName "Gestão Inteligente 3.0"
-#define AppVersion "3.0.4"
+#define AppVersion "3.0.5"
 #define AppExe "GestaoInteligente.exe"
 
 [Setup]
@@ -24,7 +24,7 @@ ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 PrivilegesRequired=admin
 CloseApplications=yes
-VersionInfoVersion=3.0.4.0
+VersionInfoVersion=3.0.5.0
 VersionInfoDescription=Instalador do {#AppName}
 VersionInfoProductName={#AppName}
 

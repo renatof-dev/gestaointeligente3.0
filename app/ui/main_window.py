@@ -75,6 +75,7 @@ except Exception:  # pragma: no cover
 
 from app.config import APP_VERSION, DEFAULT_PRODUCT_IMAGE, DEFAULT_SYSTEM_LOGO
 from app.database import Database
+from app.logger import log_error, log_info
 from app.services.auth_service import AuthUser, hash_password
 from app.services.backup_service import BackupService
 from app.services.product_lookup_service import lookup_product_by_barcode
@@ -316,13 +317,16 @@ def run_backup_with_progress(parent: QWidget | None, destination_email: str, tit
 
     backup_file = state["file"]
     if state["status"] == "sent":
+        log_info(f"Backup enviado por e-mail para {destination_email}")
         return backup_file, True, ""
     if state["status"] == "no_email":
         return backup_file, False, "Nenhum e-mail de backup cadastrado em Configura??es > Empresa."
     if result["cancelled"]:
         return backup_file, False, "Envio cancelado pelo usu?rio."
     if result["timed_out"]:
+        log_error("Backup: tempo limite de envio excedido")
         return backup_file, False, "Tempo limite de envio excedido."
+    log_error(f"Backup: falha no envio - {state['error']}")
     return backup_file, False, state["error"] or "Falha desconhecida."
 
 
@@ -601,6 +605,7 @@ class MainWindow(QMainWindow):
         dialog.exec()
 
         if state["error"]:
+            log_error(f"Auto-update: falha ao baixar atualizacao - {state['error']}")
             QMessageBox.warning(
                 self,
                 "Atualização",
@@ -2891,9 +2896,11 @@ class PdvPage(BasePage):
                 preview=preview,
             )
         except ValueError as exc:
+            log_error("Falha ao finalizar venda", exc)
             QMessageBox.warning(self, "PDV", str(exc))
             return
         self.last_sale_id = sale_id
+        log_info(f"Venda #{sale_id} finalizada (total {fmt_money(preview.get('net_total', 0))})")
 
         msg = self._make_receipt_text(sale_id, preview)
         _show_receipt_preview(self, self.db, self.printer_service, sale_id, msg)

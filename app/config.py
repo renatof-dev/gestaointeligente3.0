@@ -21,7 +21,7 @@ BACKUP_DIR = BASE_DIR / "backups"
 PDF_DIR = BASE_DIR / "cupons"
 
 APP_NAME = "Gestao Inteligente 3.0"
-APP_VERSION = "3.0.4"
+APP_VERSION = "3.0.5"
 DEFAULT_MASTER_USERNAME = "admin"
 DEFAULT_MASTER_PASSWORD = "admin123"
 

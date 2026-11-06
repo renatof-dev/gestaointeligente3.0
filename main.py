@@ -9,6 +9,7 @@ from PySide6.QtWidgets import QApplication
 
 from app.config import DEFAULT_SYSTEM_LOGO
 from app.database import Database
+from app.logger import install_exception_hook, log_info
 from app.services.auth_service import AuthService
 from app.ui.login_window import LoginWindow
 from app.ui.main_window import MainWindow, install_screen_fit
@@ -16,6 +17,8 @@ from app.ui.theme import APP_STYLESHEET
 
 
 def main() -> int:
+    install_exception_hook()
+    log_info("Sistema iniciado")
     QApplication.setHighDpiScaleFactorRoundingPolicy(Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
     app = QApplication(sys.argv)
     install_screen_fit(app)

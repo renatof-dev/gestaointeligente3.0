@@ -31,6 +31,24 @@ VersionInfoVersion=3.0.4.0
 
 ---
 
+## Passo 1.5 — Rodar os testes (recomendado)
+
+Antes de gerar o instalador, rode os testes para garantir que nada quebrou:
+
+```powershell
+cd "c:\Users\renat\OneDrive\Área de Trabalho\Projeto Sistema\Gestão Inteligente 3.0"
+& ".venv\Scripts\python.exe" -m pytest tests/
+```
+
+Deve aparecer **"N passed"** (todos passando). Se algum falhar, **corrija antes de continuar** — assim você evita enviar uma versão com problema para os clientes.
+
+> Na primeira vez, instale as dependências de desenvolvimento:
+> ```powershell
+> & ".venv\Scripts\python.exe" -m pip install -r requirements-dev.txt
+> ```
+
+---
+
 ## Passo 2 — Gerar os instaladores
 
 Abra o **PowerShell** na pasta do projeto e rode os comandos abaixo.

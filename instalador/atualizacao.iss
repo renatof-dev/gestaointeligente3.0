@@ -2,7 +2,7 @@
 ; Mesmo AppId do instalador original: atualiza os arquivos em cima da instalação existente.
 ; Os dados (banco, backups) ficam em %LOCALAPPDATA%\GestaoInteligente e não são tocados.
 #define AppName "Gestão Inteligente 3.0"
-#define AppVersion "3.0.3"
+#define AppVersion "3.0.4"
 #define AppExe "GestaoInteligente.exe"
 #define UpdateName "Atualização - Gestão Inteligente 3.0"
 
@@ -28,7 +28,7 @@ PrivilegesRequired=admin
 CloseApplications=yes
 CreateUninstallRegKey=no
 UpdateUninstallLogAppName=no
-VersionInfoVersion=3.0.3.0
+VersionInfoVersion=3.0.4.0
 VersionInfoDescription=Pacote de Atualização do {#AppName}
 VersionInfoProductName={#UpdateName}
 

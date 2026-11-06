@@ -123,3 +123,24 @@ A partir do momento em que a release é publicada, **todos os clientes** com ver
 ## Dica: para máquinas NOVAS
 
 Envie o arquivo **`gestaointeligente3.0.4.exe`** (instalador completo). Esse não precisa ir para o GitHub — você envia direto para o cliente novo.
+
+---
+
+## Dica: trocar a senha de e-mail SEM recompilar o instalador
+
+O sistema lê as credenciais de e-mail do arquivo `.env`. Há **dois** lugares onde ele procura, nesta ordem de prioridade:
+
+1. `%LOCALAPPDATA%\GestaoInteligente\.env` → **prioridade maior** (pasta de dados do usuário)
+2. Pasta de instalação (`C:\Program Files\Gestao Inteligente 3.0\.env`) → padrão
+
+**Para trocar a senha de e-mail de um cliente** (sem recompilar/reinstalar nada):
+
+1. Abra a pasta `%LOCALAPPDATA%\GestaoInteligente` na máquina do cliente
+2. Crie ou edite o arquivo `.env` com o conteúdo:
+   ```
+   EMAIL_REM=renato.gestaointeligente@gmail.com
+   EMAIL_SENHA=nova_senha_de_app
+   ```
+3. Reinicie o sistema
+
+O sistema passa a usar essa senha imediatamente, ignorando a que veio embutida no instalador.

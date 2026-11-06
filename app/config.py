@@ -21,12 +21,16 @@ BACKUP_DIR = BASE_DIR / "backups"
 PDF_DIR = BASE_DIR / "cupons"
 
 APP_NAME = "Gestao Inteligente 3.0"
-APP_VERSION = "3.0.3"
+APP_VERSION = "3.0.4"
 DEFAULT_MASTER_USERNAME = "admin"
 DEFAULT_MASTER_PASSWORD = "admin123"
 
-def _load_env_file(path: Path) -> None:
-    """Carrega pares CHAVE=VALOR do arquivo .env sem sobrescrever variaveis ja definidas."""
+def _load_env_file(path: Path, overwrite: bool = False) -> None:
+    """Carrega pares CHAVE=VALOR de um arquivo .env.
+
+    Por padrao nao sobrescreve variaveis ja definidas; com overwrite=True, os valores
+    do arquivo prevalecem (usado para o .env do usuario ter prioridade sobre o da instalacao).
+    """
     if not path.exists():
         return
     try:
@@ -40,12 +44,16 @@ def _load_env_file(path: Path) -> None:
         key, value = line.split("=", 1)
         key = key.strip()
         value = value.strip().strip('"').strip("'")
-        if key and key not in os.environ:
+        if key and (overwrite or key not in os.environ):
             os.environ[key] = value
 
 
+# Ordem de prioridade: primeiro carrega o .env da instalacao (valores padrao),
+# depois o .env da pasta de dados do usuario SOBRESCREVENDO (prioridade maior).
+# Assim, para trocar a senha de e-mail basta editar %LOCALAPPDATA%\GestaoInteligente\.env,
+# sem precisar recompilar/reinstalar o sistema.
 _load_env_file(INSTALL_DIR / ".env")
-_load_env_file(BASE_DIR / ".env")
+_load_env_file(BASE_DIR / ".env", overwrite=True)
 
 # Credenciais lidas do arquivo .env (EMAIL_REM / EMAIL_SENHA) ou das variaveis GI_SMTP_*.
 SMTP_SENDER_EMAIL = (os.getenv("EMAIL_REM") or os.getenv("GI_SMTP_SENDER") or "").strip()
